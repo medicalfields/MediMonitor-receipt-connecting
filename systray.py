@@ -386,7 +386,7 @@ class Window(QDialog):
             global fileType,fileTypeVer,fileFolder
             print('Loop...')
 
-            loopCount=loopCount+1  # 0から1万の範囲で乱数生成
+            loopCount=loopCount+1  
             httpsRequest.asyncTokenRequest(self, proxyDict, MFtoken, userID, sendCsv, sendCsvName,fileType,fileTypeVer)
             if response is None:
 
@@ -404,81 +404,144 @@ class Window(QDialog):
                 self.finSignal.emit(loopCount,MESSAGE_SEND_CSV)
 
 
-        def deletePatientInfo(self,csvfile):
-            sendCsv=""
+        def deletePatientInfo(self,csvfile): #NSIPSファイルから個人情報を削除する（医薬品データは残す）
+            sendCsv = ""
             reader = csv.reader(csvfile)
             for row in reader:
                 if row[0].startswith("VER"):# ヘッダ部
-                    row[6] =""
-                    row[7] =""
-                    row[8] =""
-                    row[9] =""
-                    row[10] =""
+                    if len(row) > 6:
+                        row[6] = ""
+                    if len(row) > 7:
+                        row[7] = ""
+                    if len(row) > 8:
+                        row[8] = ""
+                    if len(row) > 9:
+                        row[9] = ""
+                    if len(row) > 10:
+                        row[10] = ""
                 if row[0] == "1":  # 患者情報
-                    kanaName=""
-                    kanaNameSplit=row[2].split()
-                    if len(kanaNameSplit)>=2:
+                    kanaName = ""
+                    kanaNameSplit = ""
+
+                    if len(row) > 2:
+                        kanaNameSplit = row[2].split()
+                    if len(kanaNameSplit) >= 2:
                         kanaName = kanaNameSplit[0][0]+" "+kanaNameSplit[1][0]
-                    elif len(kanaNameSplit)>=1:
+                    elif len(kanaNameSplit) >= 1:
                         kanaName = kanaNameSplit[0][0]
-                    row[2]=kanaName
-                    kanaNameFull=unicodedata.normalize("NFKC", kanaName)
-                    kanaNameFull=kanaNameFull.replace(' ', '　')
-                    row[3]=kanaNameFull
-                    row[6]=""
-                    row[7]=""
-                    row[8]=""
-                    row[9]=""
-                    row[10]=""
-                    row[11]=""
-                    row[14]=""
-                    row[15]=""
-                    row[16]=""
-                    row[17]=""
-                    row[19]=""
-                    row[20]=""
-                    row[22]=""
-                    row[23]=""
-                    row[24]=""
-                    row[25]=""
-                    row[26]=""
-                    row[27]=""
-                    row[28]=""
-                    row[29]=""
-                    row[30]=""
-                    row[31]=""
-                    row[32]=""
-                    row[33]=""
-                    row[34]=""
-                    row[35]=""
-                    row[36]=""
-                    row[48]=""
+
+                    if len(row) > 2:
+                        row[2] = kanaName
+                    kanaNameFull = unicodedata.normalize("NFKC", kanaName)
+                    kanaNameFull = kanaNameFull.replace(' ', '　')
+                    if len(row) > 3:
+                        row[3] = kanaNameFull
+                    if len(row) > 6:
+                        row[6] = ""
+                    if len(row) > 7:
+                        row[7] = ""
+                    if len(row) > 8:
+                        row[8] = ""
+                    if len(row) > 9:
+                        row[9] = ""
+                    if len(row) > 10:
+                        row[10] = ""
+                    if len(row) > 11:
+                        row[11] = ""
+                    if len(row) > 14:
+                        row[14] = ""
+                    if len(row) > 15:
+                        row[15] = ""
+                    if len(row) > 16:
+                        row[16] = ""
+                    if len(row) > 17:
+                        row[17] = ""
+                    if len(row) > 19:
+                        row[19] = ""
+                    if len(row) > 20:
+                        row[20] = ""
+                    if len(row) > 22:
+                        row[22] = ""
+                    if len(row) > 23:
+                        row[23] = ""
+                    if len(row) > 24:
+                        row[24] = ""
+                    if len(row) > 25:
+                        row[25] = ""
+                    if len(row) > 26:
+                        row[26] = ""
+                    if len(row) > 27:
+                        row[27] = ""
+                    if len(row) > 28:
+                        row[28] = ""
+                    if len(row) > 29:
+                        row[29] = ""
+                    if len(row) > 30:
+                        row[30] = ""
+                    if len(row) > 31:
+                        row[31] = ""
+                    if len(row) > 32:
+                        row[32] = ""
+                    if len(row) > 33:
+                        row[33] = ""
+                    if len(row) > 34:
+                        row[34] = ""
+                    if len(row) > 35:
+                        row[35] = ""
+                    if len(row) > 36:
+                        row[36] = ""
+                    if len(row) > 48:
+                        row[48] = ""
 
                 if row[0] == "2":  # 処方箋情報
-                    kanaName=""
-                    if len(row[14])>0:
-                        kanaName=row[14][0]
-                    row[14]=kanaName
-                    row[12]=""
-                    row[13]=""
-                    row[15]=""
-                    row[16]=""
-                    row[17]=""
-                    row[18]=""
-                    row[19]=""
-                    row[20]=""
-                    row[21]=""
-                    row[22]=""
-                    row[23]=""
-                    row[24]=""
-                    row[25]=""
-                    row[26]=""
-                    row[27]=""
-                    row[28]=""
-                    row[29]=""
-                    row[30]=""
-                    row[31]=""
-                    row[32]=""
+                    kanaName = ""
+
+                    if len(row) > 14:
+                        if len(row[14]) > 0:
+                            kanaName = row[14][0]
+
+                    if len(row) > 14:
+                        row[14] = kanaName
+                    if len(row) > 12:
+                        row[12] = ""
+                    if len(row) > 13:
+                        row[13] = ""
+                    if len(row) > 15:
+                        row[15] = ""
+                    if len(row) > 16:
+                        row[16] = ""
+                    if len(row) > 17:
+                        row[17] = ""
+                    if len(row) > 18:
+                        row[18] = ""
+                    if len(row) > 19:
+                        row[19] = ""
+                    if len(row) > 20:
+                        row[20] = ""
+                    if len(row) > 21:
+                        row[21] = ""
+                    if len(row) > 22:
+                        row[22] = ""
+                    if len(row) > 23:
+                        row[23] = ""
+                    if len(row) > 24:
+                        row[24] = ""
+                    if len(row) > 25:
+                        row[25] = ""
+                    if len(row) > 26:
+                        row[26] = ""
+                    if len(row) > 27:
+                        row[27] = ""
+                    if len(row) > 28:
+                        row[28] = ""
+                    if len(row) > 29:
+                        row[29] = ""
+                    if len(row) > 30:
+                        row[30] = ""
+                    if len(row) > 31:
+                        row[31] = ""
+                    if len(row) > 32:
+                        row[32] = ""
 
                 sendCsv += ','.join(row)
                 sendCsv += '\n'
