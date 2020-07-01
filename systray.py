@@ -494,14 +494,30 @@ class Window(QDialog):
                         row[48] = ""
 
                 if row[0] == "2":  # 処方箋情報
-                    kanaName = ""
-
+                    hName = ""
                     if len(row) > 14:
                         if len(row[14]) > 0:
-                            kanaName = row[14][0]
+                            hName = row[14][0]
 
+                    dName = ""
+                    if len(row) > 19:
+                        if len(row[19]) > 0:
+                            dName = row[19][0]
+
+                    kanaName = ""
+                    kanaNameSplit = ""
+
+                    if len(row) > 23:
+                        kanaNameSplit = row[23].split()
+                    if len(kanaNameSplit) >= 2:
+                        kanaName = kanaNameSplit[0][0]+" "+kanaNameSplit[1][0]
+                    elif len(kanaNameSplit) >= 1:
+                        kanaName = kanaNameSplit[0][0]
+
+                    kanaNameFull = unicodedata.normalize("NFKC", kanaName)
+                    kanaNameFull = kanaNameFull.replace(' ', '　')
                     if len(row) > 14:
-                        row[14] = kanaName
+                        row[14] = hName
                     if len(row) > 12:
                         row[12] = ""
                     if len(row) > 13:
@@ -512,20 +528,16 @@ class Window(QDialog):
                         row[16] = ""
                     if len(row) > 17:
                         row[17] = ""
-                    if len(row) > 18:
-                        row[18] = ""
                     if len(row) > 19:
-                        row[19] = ""
+                        row[19] = dName
                     if len(row) > 20:
                         row[20] = ""
                     if len(row) > 21:
                         row[21] = ""
-                    if len(row) > 22:
-                        row[22] = ""
                     if len(row) > 23:
-                        row[23] = ""
+                        row[23] = kanaName
                     if len(row) > 24:
-                        row[24] = ""
+                        row[24] = kanaNameFull
                     if len(row) > 25:
                         row[25] = ""
                     if len(row) > 26:
