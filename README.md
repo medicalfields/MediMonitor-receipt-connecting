@@ -12,7 +12,7 @@ MedicalFields株式会社のシステムであるMediMonitorと各社メーカ�
 ダウンロード→https://medicalfields.jp/mm_setup.exe<br>
 ※解説→https://medicalfields.jp/how_to_setup_mm/</p>
 <br><br>
-<h2>・Windows版について</h2>
+<h2>・Mac,Linux版について</h2>
 <p>インストーラーはなく、各自で設定する必要があります。（専門的な知識が必要になります）
 </p>
 
