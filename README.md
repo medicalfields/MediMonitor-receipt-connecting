@@ -34,6 +34,10 @@ pip3 install pyqt5<br>
 pip3 install objgraph<br>
 sudo apt-get install python3-pyqt5<br>
 をインストールして下さい<br>
+※起動に成功した場合
+
+![ubuntu_medimonitor](https://user-images.githubusercontent.com/57011944/100705074-f2de8d00-33e9-11eb-8577-2b807c377cba.png)
+
 <h6>5.連動ソフトが起動したら、共有先のSIPSフォルダをマウントする</h6>
 sudo apt install -y cifs-utils<br>
 sudo mkdir /mnt/sips<br>
