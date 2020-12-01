@@ -2,16 +2,21 @@
 # -*- coding: utf-8 -*-
 LOGIN_SERVER_IP="member.medicalfields.jp"
 VERSION_INFO="1.1"
+import certifi
 from functools import partial
 from PyQt5.QtCore import QLocale, QTranslator, QLibraryInfo
 import configparser
 import os
 import requests
+print(requests.certs.where())
 import unicodedata
 from requests.exceptions import Timeout
 from requests.exceptions import ProxyError
 import json
-import winreg as winreg
+try :
+    import winreg as winreg
+except ModuleNotFoundError:
+    print('Not Windows')
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QAction, QApplication, QCheckBox, QComboBox,
         QDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
@@ -27,11 +32,11 @@ import time
 import csv
 import systray_rc
 import re
+from os.path import expanduser
 from chardet.universaldetector import UniversalDetector
-#>Pyrcc5 systray/systray.qrc -o systray/systray_rc.py
 global proxyIP,proxyPort,useInternetExplorerSetting,useProxy,IEProxyIP,IEProxyPort,proxyDict
 global fileType,fileTypeVer,fileFolder,fileFolderTemp,fileFolderCheckType,fileSuccessFlag,updateDetect,privacyInfo
-global loginName,loginPass,isLogined,userID,userName,userEmail,MFtoken,loopCount,onlyStartUpProcess
+global loginName,loginPass,isLogined,userID,userName,userEmail,MFtoken,loopCount,onlyStartUpProcess,didLoopCountPing
 updateDetect=False
 isLogined=False
 onlyStartUpProcess=True
@@ -39,16 +44,15 @@ loopCount=0
 fileSuccessFlag=False
 fileFolderTemp=""
 fileFolderCheckType=0
+didLoopCountPing=0
 import base64
 from os import path
-
 FOLDER_PATH_REGEX = r'^[a-zA-Z]:\\(((?![<>:"/\\|?*]).)+((?<![ .])\\)?)*$'
 NETWORK_FOLDER_PATH_REGEX = r'^\\\\(((?![<>:"/\\|?*]).)+((?<![ .])\\)?){1,}\\(((?![<>:"/\\|?*]).)+((?<![ .])\\)?)*$'
 MESSAGE_NO = 0
 MESSAGE_NO_MAIN_FOLDER=3
 MESSAGE_NO_INDEX_FOLDER=1
 MESSAGE_NOT_FIND_TXT=2
-
 MESSAGE_NO_MAIN_FOLDER_="<b>エラー！</b>\u2029連動用フォルダに入力された場所にフォルダが存在しません\u2029" \
                          "一度レセコンより連動用のデータを出力してください\u2029" \
                          "もしレセコンから連動用のデータを出力したのにも関わらずこの画面が再び出た場合は連動用フォルダの入力が間違っている可能性が高いです\u2029" \
@@ -62,6 +66,7 @@ MESSAGE_NO_INDEX_FOLDER_="<b>エラー！</b>\u2029連動用フォルダに入�
 
 SET_VISUALITY_FALSE=4
 MESSAGE_INTERNET_ERROR=5
+MESSAGE_INTERNET_ERROR_="<b>エラー！</b>\u2029インターネットに接続できませんでした。再試行しています。インターネットに接続されているかご確認ください。またプロキシーの設定が正しいかご確認ください。"
 MESSAGE_OTHER_FILE_DETECT=6
 MESSAGE_OTHER_FILE_DETECT_="<b>エラー！</b>\u2029Nsipsの連動設定がされているindexフォルダに別のファイルが見つかりました。\u2029通常indexフォルダにはtxtファイルのみしか存在できません。\u2029" \
                            "一度フォルダの中身を空にするか、連動設定を再構築してください。"
@@ -74,10 +79,25 @@ MESSAGE_404_DETECT=10
 MESSAGE_UPLOAD_TEXT_ERROR_DETECT=11
 MESSAGE_UPLOAD_FILE_TYPE_ERROR_DETECT=12
 MESSAGE_400_DETECT=13
+MESSAGE_NO_WRITE_PERMISSION =14
+MESSAGE_NO_WRITE_PERMISSION_ ="<b>エラー！</b>\u2029連動先フォルダにNsipsファイルは存在するのですが、フォルダに存在するNsipsファイルの削除を行うことができません。フォルダのアクセス権限に「変更」権限があるかご確認下さい。\u2029" \
+                    "\u2029設定方法：\u2029１、連動先のPCにあるNsipsのフォルダを右クリック⇒プロパティを選択。\u2029" \
+"２、共有タブを選択し、詳細な共有を選択。\u2029" \
+"３、アクセス許可を選択。\u2029" \
+"４、Everyone(※または共有設定した名前)の変更にチェックを入れてＯＫを選択。\u2029" \
+"５、共有のプロパティに戻って、セキュリティタブを選択し、編集を選択。\u2029" \
+"６、変更権限を付けたいユーザを選択。\u2029" \
+"７、アクセス許可の部分の変更にチェックを入れて、OKを選択。"
+MESSAGE_INTERNET_EXCEPTION =15
+MESSAGE_INTERNET_EXCEPTION_ = ""
+MESSAGE_PING_CHECK =16
+MESSAGE_PING_CHECK_ = "一定時間経過したため、システムのログイン情報を更新しています・・・"
+MESSAGE_INTERNET_CHECK_ = "現在インターネット未接続のため、再ログイン処理を行っています。インターネットの接続状況を確認してください。\nログインを続行した場合、現在ログインしているＩＤとパスワード情報は失われます。ログインを続行してもよろしいですか？"
+localMessageTextEditFlag=-1
+isExceptionErrorShown=True
 import objgraph
 import subprocess
 from PyQt5 import QtWidgets
-
 # 2重起動を防ぐ
 if os.name == 'posix':
     print('on Mac or Linux')
@@ -93,7 +113,6 @@ if os.name == 'posix':
     if int(output) != 1:
         exit()
 elif os.name == 'nt':
-
     import win32api
     import win32event
     import winerror
@@ -101,7 +120,6 @@ elif os.name == 'nt':
     print('on Windows')
     UNIQUE_MUTEX_NAME = 'Global\\MyProgramIsAlreadyRunning'
     handle = win32event.CreateMutex(None, pywintypes.FALSE, UNIQUE_MUTEX_NAME)
-
     if not handle or win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
         print('既に別のプロセスが実行中です。', file=sys.stderr)
         app = QApplication(sys.argv)
@@ -160,18 +178,32 @@ class Window(QDialog):
         global indexDirTemp, dataDirTemp
         indexDirTemp = ""
         dataDirTemp = ""
-        if os.path.exists(fileFolder + "\\index\\"):
-            indexDirTemp = fileFolder + "\\index\\"
-        elif os.path.exists(fileFolder + "\\INDEX\\"):
-            indexDirTemp = fileFolder + "\\INDEX\\"
-        elif os.path.exists(fileFolder + "\\Index\\"):
-            indexDirTemp = fileFolder + "\\Index\\"
-        if os.path.exists(fileFolder + "\\data\\"):
-            dataDirTemp = fileFolder + "\\data\\"
-        elif os.path.exists(fileFolder + "\\DATA\\"):
-            dataDirTemp = fileFolder + "\\DATA\\"
-        elif os.path.exists(fileFolder + "\\Data\\"):
-            dataDirTemp = fileFolder + "\\Data\\"
+        if os.name == 'posix':
+            if os.path.exists(fileFolder + "/index/"):
+                indexDirTemp = fileFolder + "/index/"
+            elif os.path.exists(fileFolder + "/INDEX/"):
+                indexDirTemp = fileFolder + "/INDEX/"
+            elif os.path.exists(fileFolder + "/Index/"):
+                indexDirTemp = fileFolder + "/Index/"
+            if os.path.exists(fileFolder + "/data/"):
+                dataDirTemp = fileFolder + "/data/"
+            elif os.path.exists(fileFolder + "/DATA/"):
+                dataDirTemp = fileFolder + "/DATA/"
+            elif os.path.exists(fileFolder + "/Data/"):
+                dataDirTemp = fileFolder + "/Data/"
+        else :
+            if os.path.exists(fileFolder + "\\index\\"):
+                indexDirTemp = fileFolder + "\\index\\"
+            elif os.path.exists(fileFolder + "\\INDEX\\"):
+                indexDirTemp = fileFolder + "\\INDEX\\"
+            elif os.path.exists(fileFolder + "\\Index\\"):
+                indexDirTemp = fileFolder + "\\Index\\"
+            if os.path.exists(fileFolder + "\\data\\"):
+                dataDirTemp = fileFolder + "\\data\\"
+            elif os.path.exists(fileFolder + "\\DATA\\"):
+                dataDirTemp = fileFolder + "\\DATA\\"
+            elif os.path.exists(fileFolder + "\\Data\\"):
+                dataDirTemp = fileFolder + "\\Data\\"
         if len(indexDirTemp) == 0:
             return False
         if len(dataDirTemp) == 0:
@@ -196,45 +228,67 @@ class Window(QDialog):
                     print(MFtoken + "tokenがないです")
                     break
                 if onlyStartUpProcess:
-                    self.connectHTTPandSendCSV("","")#これはIDのチェックのため
+                    self.connectHTTPandSendCSV("", "")  # これはIDのチェックのため
                     if self.folderErrorCheck() and fileSuccessFlag:
                         self.finSignal.emit(loopCount, SET_VISUALITY_FALSE)
 
-                    onlyStartUpProcess=False
+                    onlyStartUpProcess = False
                 else:
                     if (self.loopFlag == 1):
                         if self.folderErrorCheck():
                             self.folderCheckAndUpload()
                     else:
                         break
+
+
         def folderErrorCheck(self):
             global indexDir,dataDir
-            indexDir = ""
-            dataDir = ""
-            if os.path.exists(fileFolder + "\\index\\"):
-                indexDir = fileFolder + "\\index\\"
-            elif os.path.exists(fileFolder + "\\INDEX\\"):
-                indexDir = fileFolder + "\\INDEX\\"
-            elif os.path.exists(fileFolder + "\\Index\\"):
-                indexDir = fileFolder + "\\Index\\"
-            if os.path.exists(fileFolder + "\\data\\"):
-                dataDir = fileFolder + "\\data\\"
-            elif os.path.exists(fileFolder + "\\DATA\\"):
-                dataDir = fileFolder + "\\DATA\\"
-            elif os.path.exists(fileFolder + "\\Data\\"):
-                dataDir = fileFolder + "\\Data\\"
-            if len(indexDir) == 0:
-                print("noIndexDir")
-                self.finSignal.emit(loopCount, MESSAGE_NO_INDEX_FOLDER)
+            try:
+                indexDir = ""
+                dataDir = ""
+                if os.name == 'posix':
+                    if os.path.exists(fileFolder + "/index/"):
+                        indexDir = fileFolder + "/index/"
+                    elif os.path.exists(fileFolder + "/INDEX/"):
+                        indexDir = fileFolder + "/INDEX/"
+                    elif os.path.exists(fileFolder + "/Index/"):
+                        indexDir = fileFolder + "/Index/"
+                    if os.path.exists(fileFolder + "/data/"):
+                        dataDir = fileFolder + "/data/"
+                    elif os.path.exists(fileFolder + "/DATA/"):
+                        dataDir = fileFolder + "/DATA/"
+                    elif os.path.exists(fileFolder + "/Data/"):
+                        dataDir = fileFolder + "/Data/"
+                else :
+                    if os.path.exists(fileFolder + "\\index\\"):
+                        indexDir = fileFolder + "\\index\\"
+                    elif os.path.exists(fileFolder + "\\INDEX\\"):
+                        indexDir = fileFolder + "\\INDEX\\"
+                    elif os.path.exists(fileFolder + "\\Index\\"):
+                        indexDir = fileFolder + "\\Index\\"
+                    if os.path.exists(fileFolder + "\\data\\"):
+                        dataDir = fileFolder + "\\data\\"
+                    elif os.path.exists(fileFolder + "\\DATA\\"):
+                        dataDir = fileFolder + "\\DATA\\"
+                    elif os.path.exists(fileFolder + "\\Data\\"):
+                        dataDir = fileFolder + "\\Data\\"
+                if len(indexDir) == 0:
+                    print("noIndexDir")
+                    self.finSignal.emit(loopCount, MESSAGE_NO_INDEX_FOLDER)
+                    time.sleep(5)
+                    return False
+
+                if len(dataDir) == 0:
+                    print("noDataDir")
+                    self.finSignal.emit(loopCount, MESSAGE_NO_INDEX_FOLDER)
+                    time.sleep(5)
+                    return False
+                return True
+            except:
+                print("folder error check except")
                 time.sleep(5)
                 return False
 
-            if len(dataDir) == 0:
-                print("noDataDir")
-                self.finSignal.emit(loopCount, MESSAGE_NO_INDEX_FOLDER)
-                time.sleep(5)
-                return False
-            return True
 
 
         def folderCheckAndUpload(self):
@@ -242,29 +296,29 @@ class Window(QDialog):
             global indexDir,dataDir
             global loginName, loginPass, isLogined, userID, userName, userEmail, MFtoken, proxyDict,loopCount
             global response,fileSuccessFlag,updateDetect
-            global fileType,fileTypeVer,fileFolder,privacyInfo
+            global fileType,fileTypeVer,fileFolder,privacyInfo,didLoopCountPing
             print('Loop...')
             csvName=""
             dirLoopCount=0
             while (True):
                 if (self.loopFlag != 1):
                     break
-                files = glob.glob(indexDir+"*")
-                otherFileDetect=False
-                indexExistButDataNotExist=False
+                files = glob.glob(indexDir + "*")
+                otherFileDetect = False
+                indexExistButDataNotExist = False
                 for file in files:
-                    if file.endswith("txt") or file.endswith("TXT") :
+                    if file.endswith("txt") or file.endswith("TXT"):
                         print("doUpload")
-                        if not fileSuccessFlag :
-                            fileSuccessFlag=True
+                        if not fileSuccessFlag:
+                            fileSuccessFlag = True
                             configSaver.saveConfig(self)
                         basename = os.path.basename(file)
-                        dataFilePath=dataDir+basename
-                        csvBase64=""
-                        sendCsv=""
+                        dataFilePath = dataDir + basename
+                        csvBase64 = ""
+                        sendCsv = ""
                         if os.path.exists(dataFilePath):
 
-                            fileTypeError=True
+                            fileTypeError = True
                             someError = True
                             lookup = ('cp932', 'utf_8_sig', 'utf_8')
                             for trying_encoding in lookup:
@@ -291,6 +345,7 @@ class Window(QDialog):
                                                 csvBase64 = base64.b64encode(
                                                     csvBase.encode("shift_jis", errors="ignore"))
 
+                                        didLoopCountPing = 0
                                         self.connectHTTPandSendCSV(csvBase64, basename)
                                         if response is not None:
                                             if response.status_code == 200:
@@ -304,6 +359,8 @@ class Window(QDialog):
                                                                 os.remove(file)
                                                                 okToDelete = False
                                                             except PermissionError:
+                                                                self.finSignal.emit(loopCount,
+                                                                                    MESSAGE_NO_WRITE_PERMISSION)
                                                                 print('パーミッションエラーです。')
                                                                 time.sleep(0.5)
                                                             except Exception:
@@ -316,6 +373,8 @@ class Window(QDialog):
                                                                 os.remove(dataFilePath)
                                                                 okToDelete = False
                                                             except PermissionError:
+                                                                self.finSignal.emit(loopCount,
+                                                                                    MESSAGE_NO_WRITE_PERMISSION)
                                                                 print('パーミッションエラーです。')
                                                                 time.sleep(0.5)
                                                             except Exception:
@@ -348,52 +407,85 @@ class Window(QDialog):
                                                             MESSAGE_UPLOAD_TEXT_ERROR_DETECT)
                                         time.sleep(5)
 
-
                                     break
                                 except UnicodeDecodeError:
-                                    print ("UnicodeDecodeError")
+                                    print("UnicodeDecodeError")
                                     continue
 
 
 
                         else:
-                            indexExistButDataNotExist=True
-
+                            indexExistButDataNotExist = True
 
                         print(dataFilePath)
                     else:
                         print(file)
-                        otherFileDetect=True
+                        otherFileDetect = True
 
                 if dirLoopCount == 50:
-                    print("endIndexLoop"+str(dirLoopCount))
+                    print("endIndexLoop" + str(dirLoopCount) + " loopCount" + str(loopCount)+ " didLoopCountPing" + str(didLoopCountPing))
                     if otherFileDetect:
                         self.finSignal.emit(loopCount, MESSAGE_OTHER_FILE_DETECT)
                     elif updateDetect:
                         self.finSignal.emit(loopCount, MESSAGE_UPDATE_DETECT)
                     elif indexExistButDataNotExist:
                         self.finSignal.emit(loopCount, MESSAGE_INDEX_EXIST_BUT_DATA_NOT_EXIST)
-                    else :
+                    else:
                         self.finSignal.emit(loopCount, MESSAGE_NOT_FIND_TXT)
+                    if didLoopCountPing==600:
+                        didLoopCountPing=0
+                        self.pingHTTP()
+                    didLoopCountPing=didLoopCountPing+1
                     break
-                dirLoopCount=dirLoopCount+1
+                dirLoopCount = dirLoopCount + 1
                 time.sleep(0.1)
+        def pingHTTP(self):
+
+            print("do pingHTTP")
+            self.finSignal.emit(loopCount, MESSAGE_PING_CHECK)
+            self.connectHTTPandSendCSV("", "")
+            updateDetect=False
+            if response is not None:
+                if response.status_code == 200:
+                    r = json.loads(response.text)
+                    if "this" in r:
+                        if r["this"] == "kara":
+                            print("ping OK")
+                            #self.finSignal.emit(loopCount, MESSAGE_NO)
+
+                        if r["this"] == "needUpdate":
+                            updateDetect = True
+
+                if response.status_code == 404:
+                    self.finSignal.emit(loopCount, MESSAGE_404_DETECT)
+                    time.sleep(300)
+                if response.status_code == 400:
+                    someError = False
+                    self.finSignal.emit(loopCount, MESSAGE_400_DETECT)
+
+
+                if updateDetect:
+                    print("アップロード中にアップデートが見つかりました")
+                    self.finSignal.emit(loopCount, MESSAGE_UPDATE_DETECT)
+                    time.sleep(300)
+
+
 
         def connectHTTPandSendCSV(self,sendCsv,sendCsvName):
 
             global loginName, loginPass, isLogined, userID, userName, userEmail, MFtoken, proxyDict,loopCount
             global response
-            global fileType,fileTypeVer,fileFolder
-            print('Loop...')
+            global fileType,fileTypeVer,fileFolder,receivedType
+            print('send... count:'+str(loopCount))
 
-            loopCount=loopCount+1  
-            httpsRequest.asyncTokenRequest(self, proxyDict, MFtoken, userID, sendCsv, sendCsvName,fileType,fileTypeVer)
+            loopCount=loopCount+1
+            httpsRequest.asyncTokenRequest(self, proxyDict, MFtoken, userID, sendCsv, sendCsvName,fileType,fileTypeVer,receivedType)
             if response is None:
 
                 while (True):
                     print(" response is None while (True)"+str(loopCount))
                     self.finSignal.emit(loopCount,MESSAGE_INTERNET_ERROR)
-                    httpsRequest.asyncTokenRequest(self, proxyDict, MFtoken, userID, sendCsv, sendCsvName,fileType,fileTypeVer)
+                    httpsRequest.asyncTokenRequest(self, proxyDict, MFtoken, userID, sendCsv, sendCsvName,fileType,fileTypeVer,receivedType)
                     time.sleep(5)
                     if response is not None:
                         break
@@ -403,6 +495,17 @@ class Window(QDialog):
             else:
                 self.finSignal.emit(loopCount,MESSAGE_SEND_CSV)
 
+
+        kanjaid=0
+        kanjaCSV=[]
+        createDemoFlag = False
+        def createDemoName(self):
+            with open('kanja.csv') as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    self.kanjaCSV.append(row)
+                    #print(row)
+            return ""
 
         def deletePatientInfo(self,csvfile): #NSIPSファイルから個人情報を削除する（医薬品データは残す）
             sendCsv = ""
@@ -423,6 +526,7 @@ class Window(QDialog):
                     kanaName = ""
                     kanaNameSplit = ""
 
+
                     if len(row) > 2:
                         kanaNameSplit = row[2].split()
                     if len(kanaNameSplit) >= 2:
@@ -434,6 +538,8 @@ class Window(QDialog):
                         row[2] = kanaName
                     kanaNameFull = unicodedata.normalize("NFKC", kanaName)
                     kanaNameFull = kanaNameFull.replace(' ', '　')
+
+
                     if len(row) > 3:
                         row[3] = kanaNameFull
                     if len(row) > 6:
@@ -492,6 +598,23 @@ class Window(QDialog):
                         row[36] = ""
                     if len(row) > 48:
                         row[48] = ""
+
+                    if self.createDemoFlag:
+                        self.createDemoName()
+                        self.kanjaid += 1
+                        # row[2] = self.kanjaCSV[self.kanjaid][2]
+                        # row[3] = self.kanjaCSV[self.kanjaid][1]
+                        # row[4] = self.kanjaCSV[self.kanjaid][3]
+                        # if self.kanjaCSV[self.kanjaid][4] == "男":
+                        #     row[4] = "1"
+                        # if self.kanjaCSV[self.kanjaid][4] == "女":
+                        #     row[4] = "2"
+                        # row[5] = self.kanjaCSV[self.kanjaid][12].replace('/', '')
+                        # row[6] = self.kanjaCSV[self.kanjaid][9].replace('-', '')
+                        # row[7] = self.kanjaCSV[self.kanjaid][10]
+                        # row[8] = self.kanjaCSV[self.kanjaid][6].replace('-', '')
+                        # print(self.kanjaCSV[self.kanjaid])
+                        # print(self.kanjaCSV[self.kanjaid][1])
 
                 if row[0] == "2":  # 処方箋情報
                     hName = ""
@@ -555,6 +678,18 @@ class Window(QDialog):
                     if len(row) > 32:
                         row[32] = ""
 
+                    if self.createDemoFlag:
+                        prescribeDate = 20200201 + self.kanjaid % 10
+                        row[4] = str(prescribeDate)
+                        row[6] = str(prescribeDate)
+                        row[7] = str(prescribeDate)
+                        # row[14] ="テストクリニック"
+                        # row[15] ="8120018"
+                        # row[16] ="福岡市博多区住吉1-2-3"
+                        # row[17] ="0123456789"
+                        # row[23] ="ﾃｽﾄ ｲｼ"
+                        # row[24] ="テスト　医師"
+
                 sendCsv += ','.join(row)
                 sendCsv += '\n'
             return sendCsv
@@ -610,6 +745,7 @@ class Window(QDialog):
         self.iconComboBox.currentIndexChanged.connect(self.changeFiletype)
         self.verComboBox.currentIndexChanged.connect(self.changeVertype)
         self.privacyComboBox.currentIndexChanged.connect(self.changePrivacytype)
+        self.receivedComboBox.currentIndexChanged.connect(self.changeReceivedtype)
         self.trayIcon.messageClicked.connect(self.messageClicked)
         self.trayIcon.activated.connect(self.iconActivated)
         self.btnFolder.clicked.connect(self.show_folder_dialog)
@@ -631,12 +767,12 @@ class Window(QDialog):
         self.startThread()
     # シグナルで送られたデータは引数として受け取れる
     def afterThreadFinished(self, signalData,messageDialog):
-        global fileSuccessFlag
+        global fileSuccessFlag , MESSAGE_INTERNET_EXCEPTION_ , isExceptionErrorShown,localMessageTextEditFlag
         print('thread is finished. signal: ', end='')
         print(str(signalData)+" ")
+        localMessageTextEditFlag=messageDialog
         #sleep(1)  # 1秒停止
-        if signalData>0:
-            objgraph.show_growth()  # メモリリークがあれば表示される
+        objgraph.show_growth()  # メモリリークがあれば表示される
         if messageDialog==MESSAGE_NO_INDEX_FOLDER:
 
             print("MESSAGE_NO_INDEX_FOLDER")
@@ -665,6 +801,11 @@ class Window(QDialog):
 
             print("MESSAGE_UPLOAD_FILE_TYPE_ERROR_DETECT")
             self.localMessageTextEdit.setText("<b>エラー！</b>\u2029アップロードするテキストファイルの形式がNSIPS形式ではないためアップロード出来ませんでした。一度フォルダの中身を空にし、レセコンよりNSIPSを出力しているか確認して下さい。")
+
+        elif messageDialog==MESSAGE_NO_WRITE_PERMISSION:
+
+            print("MESSAGE_NO_WRITE_PERMISSION")
+            self.localMessageTextEdit.setText(MESSAGE_NO_WRITE_PERMISSION_)
 
         elif messageDialog==MESSAGE_404_DETECT:
 
@@ -696,8 +837,20 @@ class Window(QDialog):
             self.setVisible(False)
         elif messageDialog==MESSAGE_INTERNET_ERROR:
             print("MESSAGE_INTERNET_ERROR")
-            self.localMessageTextEdit.setText("<b>エラー！</b>\u2029インターネットに接続できませんでした。再試行しています。インターネットに接続されているかご確認ください。またプロキシーの設定が正しいかご確認ください。")
+            self.localMessageTextEdit.setText(MESSAGE_INTERNET_ERROR_)
 
+        elif messageDialog == MESSAGE_PING_CHECK:
+            print("MESSAGE_PING_CHECK")
+            self.localMessageTextEdit.setText(MESSAGE_PING_CHECK_)
+        elif messageDialog==MESSAGE_INTERNET_EXCEPTION:
+
+            print("MESSAGE_INTERNET_EXCEPTION")
+            self.localMessageTextEdit.setText("<b>エラー！</b>\u2029"+MESSAGE_INTERNET_EXCEPTION_)
+            self.setVisible(True)
+
+            if isExceptionErrorShown:
+                isExceptionErrorShown=False
+                ret = QMessageBox.warning(None, "確認", MESSAGE_INTERNET_EXCEPTION_, QMessageBox.Yes)
 
 
         else :
@@ -729,6 +882,11 @@ class Window(QDialog):
         if fileSuccessFlag:
             message = "すでに送信された患者情報を更新する\n→レセコンより上書きしたい患者を再送信\nすでに送信された患者情報を削除\n→レセコンより削除指示\nを行って下さい"
             ret = QMessageBox.information(None, "確認", message, QMessageBox.Ok)
+
+    def changeReceivedtype(self, index):
+        global receivedType
+        receivedType=index
+        configSaver.saveConfig(self)
     def changeVertype(self, index):
         global fileType,fileTypeVer
         fileTypeVer=index
@@ -803,7 +961,7 @@ class Window(QDialog):
         self.settingGroupBox.setLayout(iconLayout)
 
     def createIconGroupBox(self):
-        global fileType,fileTypeVer,fileFolder,privacyInfo
+        global fileType,fileTypeVer,fileFolder,privacyInfo,receivedType
         self.iconGroupBox = QGroupBox("")
 
         self.fileTypeLabel = QLabel("ファイル形式:")
@@ -812,6 +970,10 @@ class Window(QDialog):
         self.privacyComboBox = QComboBox()
         self.privacyComboBox.addItem("患者の個人情報を送信する")
         self.privacyComboBox.addItem("患者の個人情報を送信しない")
+        self.receivedLabel = QLabel("NSIPS受信時:")
+        self.receivedComboBox = QComboBox()
+        self.receivedComboBox.addItem("すべての処方箋(更新を含む)を待機リストに追加する")
+        self.receivedComboBox.addItem("処方情報が重複する場合は、待機リストに追加しない")
         self.iconComboBox = QComboBox()
         self.iconComboBox.addItem("NSIPS")
         self.verComboBox = QComboBox()
@@ -819,6 +981,7 @@ class Window(QDialog):
         self.setVerComboBox()
         self.verComboBox.setCurrentIndex(int(fileTypeVer))
         self.privacyComboBox.setCurrentIndex(int(privacyInfo))
+        self.receivedComboBox.setCurrentIndex(int(receivedType))
         self.showIconCheckBox = QCheckBox("Show icon")
         self.showIconCheckBox.setChecked(True)
         self.txtLabel = QLabel("連動先フォルダ:")
@@ -833,10 +996,12 @@ class Window(QDialog):
         iconLayout.addWidget(self.iconComboBox, 2, 1, 1, 4)
         iconLayout.addWidget(self.verLabel, 3, 0)
         iconLayout.addWidget(self.verComboBox, 3, 1, 1, 4)
-        iconLayout.addWidget(self.privacyLabel, 4, 0)
-        iconLayout.addWidget(self.privacyComboBox, 4, 1, 1, 4)
-        iconLayout.addWidget(self.txtLabel, 5, 0)
-        iconLayout.addWidget(self.txtFolder, 5, 1, 1, 4)
+        iconLayout.addWidget(self.receivedLabel, 4, 0)
+        iconLayout.addWidget(self.receivedComboBox, 4, 1, 1, 4)
+        iconLayout.addWidget(self.privacyLabel, 5, 0)
+        iconLayout.addWidget(self.privacyComboBox, 5, 1, 1, 4)
+        iconLayout.addWidget(self.txtLabel, 6, 0)
+        iconLayout.addWidget(self.txtFolder, 6, 1, 1, 4)
         self.iconGroupBox.setLayout(iconLayout)
 
     def creatDebugGroupBox(self):
@@ -876,6 +1041,8 @@ class Window(QDialog):
         self.pharmIDEdit.setValidator(self.onlyInt)
         self.pharmIDEdit.setText(userID)
         passwordLabel = QLabel("パスワード:")
+        idLabel = QLabel("※薬局IDの新規登録はAndroid端末のMediMonitorアプリより行って下さい\n")
+        idLabel.setStyleSheet('color: gray')
         self.passwordEdit = QLineEdit("")
         self.passwordEdit.setEchoMode(QLineEdit.Password)
         self.bodyEdit = QTextEdit()
@@ -887,6 +1054,7 @@ class Window(QDialog):
         messageLayout.addWidget(self.pharmIDEdit, 2, 1, 1, 4)
         messageLayout.addWidget(passwordLabel, 3, 0)
         messageLayout.addWidget(self.passwordEdit, 3, 1, 1, 4)
+        messageLayout.addWidget(idLabel, 0, 0, 1, 4)
         self.messageGroupBox.setLayout(messageLayout)
 
     def quitInfo(self):
@@ -990,7 +1158,7 @@ class Window(QDialog):
         configSaver.saveConfig(self)
         self.stopThread()
     def show_connect_dialog(self):
-        global isLogined,MFtoken,userEmail,userName,userID
+        global isLogined,MFtoken,userEmail,userName,userID,localMessageTextEditFlag
         if isLogined :
             message = "ログアウトしてよろしいですか？"
             ret = QMessageBox.information(None, "確認", message, QMessageBox.Yes, QMessageBox.No)
@@ -1011,6 +1179,14 @@ class Window(QDialog):
                 message = "パスワードを入力してください。"
                 ret = QMessageBox.information(None, "確認", message, QMessageBox.Yes)
                 return
+
+            if localMessageTextEditFlag == MESSAGE_INTERNET_ERROR:
+                message = MESSAGE_INTERNET_CHECK_
+                ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes, QMessageBox.No)
+                if ret == QMessageBox.No:
+                    return
+
+
             httpsRequest.loginRequest(self, self.pharmIDEdit.text(), self.passwordEdit.text(), "pc")
 
     def show_wizard_dialog(self):
@@ -1222,9 +1398,18 @@ class Page2(QtWidgets.QWizardPage):
         messageLayout.addWidget(self.parents.txtFolderW, 2, 1, 1, 3)
         messageLayout.addWidget(btnFolder, 2, 4, 1, 1)
 
-        messageLayout.addWidget(QLabel("※半角の【＼】と【￥】は同じ文字として扱われます 入力をする場合は半角で【\】と入力してください"),3, 1, 1, 4)
-        messageLayout.addWidget(QLabel("例: ¥¥emscr01¥RECEPTYN¥SIPS3"),4, 1, 1, 4)
-        messageLayout.addWidget(QLabel("例: C:\SIPS2"), 5, 1, 1, 4)
+
+        if os.name == 'posix':
+            messageLayout.addWidget(QLabel("※レセコンでSIPSフォルダを共有した後、このPCでマウントする必要があります"), 3, 1, 1, 4)
+            messageLayout.addWidget(QLabel("詳しくは【Mac(またはLinux) windows 共有フォルダ マウント】で検索して下さい"), 4, 1, 1, 4)
+            messageLayout.addWidget(QLabel("入力例: 【○  /mnt/sips1】\u2029【☓  ¥¥emscr01¥RECEPTYN¥SIPS3】"), 5, 1, 1, 4)
+        else :
+            messageLayout.addWidget(QLabel("※半角の【＼】と【￥】は同じ文字として扱われます 入力をする場合は半角で【\】と入力してください"), 3, 1, 1, 4)
+            messageLayout.addWidget(QLabel("例: ¥¥emscr01¥RECEPTYN¥SIPS3"), 4, 1, 1, 4)
+            messageLayout.addWidget(QLabel("例: C:\SIPS2"), 5, 1, 1, 4)
+
+
+
         messageGroupBox.setLayout(messageLayout)
         layout.addWidget(addressLabel)
         layout.addWidget(messageGroupBox)
@@ -1250,6 +1435,8 @@ class Page2(QtWidgets.QWizardPage):
         parent.button(QtWidgets.QWizard.FinishButton).setEnabled(False)
     def _doChecked(self,parent):
 
+        global indexDirTemp, dataDirTemp
+
         newFolderPath=self.parents.txtFolderW.text()
         if len(newFolderPath)==0:
             message="<b>エラー！</b>\u2029連動先フォルダに入力がされていません。連動先フォルダを直接入力（右クリックでコピーしてPaste（貼り付ける）こともできます）または参照よりフォルダ選択して下さい"
@@ -1263,12 +1450,15 @@ class Page2(QtWidgets.QWizardPage):
             self.parents.localFolderMessageTextEdit.setText(message)
             ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
             return
-        if not (re.match(FOLDER_PATH_REGEX, newFolderPath) or re.match(NETWORK_FOLDER_PATH_REGEX, newFolderPath) ):
-            message = "<b>エラー！</b>\u2029連動先フォルダに入力されているパスがフォルダパスとして正しくありません。空白が間違って入ってないか【:】【\】が間違って入力されていないか 【\】は半角で入力されているかご確認下さい。また【＼】と【/】は【\】として入力してください\u2029\u2029¥¥emscr01¥RECEPTYN¥SIPS3\u2029C:\\SIPS\u2029のように入力してください\n" \
-                      ""
-            self.parents.localFolderMessageTextEdit.setText(message)
-            ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
-            return
+        if not os.name == 'posix':
+            if not (re.match(FOLDER_PATH_REGEX, newFolderPath) or re.match(NETWORK_FOLDER_PATH_REGEX, newFolderPath)):
+                message = "<b>エラー！</b>\u2029連動先フォルダに入力されているパスがフォルダパスとして正しくありません。空白が間違って入ってないか【:】【\】が間違って入力されていないか 【\】は半角で入力されているかご確認下さい。また【＼】と【/】は【\】として入力してください\u2029\u2029¥¥emscr01¥RECEPTYN¥SIPS3\u2029C:\\SIPS\u2029のように入力してください\n" \
+                          ""
+                self.parents.localFolderMessageTextEdit.setText(message)
+                ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+                return
+
+
 
         f=0
         newParentFolderPath=str('\\'.join(os.path.abspath(newFolderPath).split('\\')[0:-1 - f]))
@@ -1354,6 +1544,39 @@ class Page2(QtWidgets.QWizardPage):
             self.parents.localFolderMessageTextEdit.setText(message)
             ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
             return
+
+        tempIndexFile = dataDirTemp + "test.txt"
+
+        try:
+            with open(tempIndexFile, 'w') as f:
+                print(tempIndexFile + ' write_ok')
+                f.close()
+            if os.remove(tempIndexFile):
+                print(tempIndexFile + ' delete_ok')
+
+        except:
+            messageL = ""
+            if fileSuccessFlag:
+                messageL = "正しいのですが、"
+            else:
+                messageL = "正しいと思われるのですが、"
+            message = "<b>エラー！</b>\u2029入力された連動先フォルダ(" + newFolderPath + ")は"+messageL+"フォルダ内に存在するNsipsファイルの削除を行うことができません。連動先フォルダのアクセス権限に[変更]権限があるかご確認下さい。\u2029" \
+                                                                         "また稀にOSのアップデート処理などを行っている最中にこのエラーが出ることもあります。PCを再起動した後、再度フォルダチェックを実行して下さい。\u2029" \
+                                                                         "\u2029アクセス権限設定方法：\u2029１、連動先のPCにあるNsipsの共有元フォルダを右クリック⇒プロパティを選択。\u2029" \
+                                                                         "２、共有タブを選択し、詳細な共有を選択。\u2029" \
+                                                                         "３、アクセス許可を選択。\u2029" \
+                                                                         "４、Everyone(※または共有設定した名前)の[変更]にチェックを入れ、OKを選択。\u2029" \
+                                                                         "５、共有のプロパティに戻り、セキュリティタブを選択し、編集を選択。\u2029" \
+                                                                         "６、変更権限を付けたいユーザを選択。\u2029" \
+                                                                         "７、アクセス許可の部分の[変更]にチェックを入れ、OKを選択。"
+            self.parents.localFolderMessageTextEdit.setText(message)
+            ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+            return
+
+        # if os.access(newFolderPath, os.R_OK):
+        #     ret = QMessageBox.warning(None, "確認", "test", QMessageBox.Yes)
+        #     return
+
 
         if fileSuccessFlag:
             message ="<b>成功</b>\u2029Nsipsの連動設定が成功しました。完了をクリックして連動先フォルダの登録を行ってください"
@@ -1441,7 +1664,11 @@ class configWindow:
 
         #レイアウトを設定する
         self.proxyComboBox = QComboBox()
-        self.proxyComboBox.addItem("InternetExplorerの設定を使用する")
+        if os.name == 'posix':
+            self.proxyComboBox.addItem("InternetExplorerの設定を使用する(※Windows版のみ)")
+        else:
+            self.proxyComboBox.addItem("InternetExplorerの設定を使用する")
+
         self.proxyComboBox.addItem("自分で設定する")
 
         self.proxyComboBox.currentIndexChanged.connect(self.changeProxyType)
@@ -1459,6 +1686,7 @@ class configWindow:
         self.proxyIPEdit = QLineEdit()
         self.proxyPortEdit.setValidator(validator)
         messageLayout.addWidget(self.proxyComboBox,0, 0, 1, 5)
+
         messageLayout.addWidget(self.useProxyCheckBox,1, 0, 1, 5)
         messageLayout.addWidget(addressLabel, 2, 0)
         messageLayout.addWidget(self.proxyIPEdit, 2, 1, 1, 4)
@@ -1568,7 +1796,10 @@ class configSaver:
 
         global useInternetExplorerSetting,useProxy,proxyIP,proxyPort,proxyDict
         config = configparser.ConfigParser()
-        config.read(os.getenv('APPDATA')+'\\MediMonitor\\config.ini')
+        if os.name == 'posix':
+            config.read(expanduser("~")+'/medimonitor.config.ini')
+        else:
+            config.read(os.getenv('APPDATA')+'\\MediMonitor\\config.ini')
 
 
         config['proxy'] = {
@@ -1582,6 +1813,7 @@ class configSaver:
             'fileType': fileType,
             'fileTypeVer': fileTypeVer,
             'privacyInfo': privacyInfo,
+            'receivedType': receivedType,
             'fileSuccessFlag': fileSuccessFlag
 
         }
@@ -1599,21 +1831,40 @@ class configSaver:
 
         print("saveConfigを保存しました")
         try:
+            if os.name == 'posix':
+                if not os.path.exists(expanduser("~")):
+                    os.mkdir(expanduser("~"))
 
-            if not os.path.exists(os.getenv('APPDATA') + "\\MediMonitor"):
-                os.mkdir(os.getenv('APPDATA') + "\\MediMonitor")
+                with open(expanduser("~")+'/medimonitor.config.ini', 'w') as f:
+                    config.write(f)
+            else:
+                if not os.path.exists(os.getenv('APPDATA') + "\\MediMonitor"):
+                    os.mkdir(os.getenv('APPDATA') + "\\MediMonitor")
 
-            with open(os.getenv('APPDATA')+'\\MediMonitor\\config.ini', 'w') as f:
-                config.write(f)
+                with open(os.getenv('APPDATA') + '\\MediMonitor\\config.ini', 'w') as f:
+                    config.write(f)
+
+
+
         except:
             print("saveConfigの保存にエラーが起きました")
 
     def load(self):
-        localAppIni=os.getenv('APPDATA')+'\\MediMonitor\\config.ini'
+        if os.name == 'posix':
+            localAppIni = expanduser("~")+'/medimonitor.config.ini'
+        else:
+            localAppIni=os.getenv('APPDATA')+'\\MediMonitor\\config.ini'
+
         global useInternetExplorerSetting,useProxy,proxyIP,proxyPort,proxyDict
-        global fileType,fileTypeVer,fileFolder,fileSuccessFlag,privacyInfo
+        global fileType,fileTypeVer,fileFolder,fileSuccessFlag,privacyInfo,receivedType
         global loginName,loginPass,isLogined,userID,userName,userEmail,MFtoken
-        getIEsetting(self)
+
+        global IEProxyIP, IEProxyPort
+        if os.name == 'posix':
+            IEProxyIP=""
+            IEProxyPort=""
+        else:
+            getIEsetting(self)
         print (localAppIni)
         if not os.path.exists(localAppIni):
             configSaver.createDefaultConfig(self)
@@ -1626,6 +1877,8 @@ class configSaver:
             configSaver.createDefaultConfig(self)
             configSaver.load(self)
             return
+
+
 
 
         if config["proxy"]["useInternetExplorerSetting"] =="True" :
@@ -1678,6 +1931,11 @@ class configSaver:
             fileType = 0
             fileTypeVer= 0
             privacyInfo= 0
+
+        try:
+            receivedType = int(config["main"]["receivedType"])
+        except:
+            receivedType= 1
         try:
             config["mfnet"]
             MFtoken = config["mfnet"]["t"]
@@ -1703,6 +1961,7 @@ class configSaver:
             'fileType': 0,
             'fileTypeVer':0,
             'privacyInfo': 0,
+            'receivedType': 1,
         }
         config['mfnet'] = {
             't': "",
@@ -1711,15 +1970,24 @@ class configSaver:
             'useremail': "",
 
         }
-        if not os.path.exists(os.getenv('APPDATA')+"\\MediMonitor"):
-            os.mkdir(os.getenv('APPDATA')+"\\MediMonitor")
 
-        with open(os.getenv('APPDATA')+'\\MediMonitor\\config.ini', 'w') as config_file:
-            config.write(config_file)
+        if os.name == 'posix':
+            if not os.path.exists(expanduser("~")):
+                os.mkdir(expanduser("~"))
+
+            with open(expanduser("~")+'/medimonitor.config.ini', 'w') as config_file:
+                config.write(config_file)
+        else:
+            if not os.path.exists(os.getenv('APPDATA') + "\\MediMonitor"):
+                os.mkdir(os.getenv('APPDATA') + "\\MediMonitor")
+
+            with open(os.getenv('APPDATA') + '\\MediMonitor\\config.ini', 'w') as config_file:
+                config.write(config_file)
+
 
 class httpsRequest(QThread):
 
-    def asyncTokenRequest(self,proxies,token,user_id,csv="",csvName="",csvType="0",csvVersion="0"):
+    def asyncTokenRequest(self,proxies,token,user_id,csv="",csvName="",csvType="0",csvVersion="0",receivedType="1"):
         global response
         android_id="pc"
         nonce=int(time.time()*1000)
@@ -1727,7 +1995,7 @@ class httpsRequest(QThread):
                                                   url='https://' + LOGIN_SERVER_IP + '/php/medi/mf_system_core/post_csv_from_pc.php',
                                                   data={'MFNetUserID': user_id, 'MFNetToken': token,
                                                         'MFNetAndroidID': android_id, 'MFNetCSV': csv, 'MFNetCSVVersion': csvVersion, 'MFNetCSVType': csvType, 'MFNetNonce': nonce,
-                                                        'MFNetCSVname': csvName,'pc_version': VERSION_INFO}, proxies=proxies, showMessage=False)
+                                                        'MFNetCSVname': csvName,'MFNetReceivedType': receivedType,'pc_version': VERSION_INFO}, proxies=proxies, showMessage=False)
 
     def viewRepaint(self):
         global proxyDict,userID
@@ -1751,6 +2019,11 @@ class httpsRequest(QThread):
             self.repaint()
             return
 
+        if response.status_code==503:
+            print("token 503")
+            self.onlineMessageLabel.setText("<b>接続エラー（アクセスが集中している可能性があります） 再試行します</b>")
+            self.repaint()
+            return
 
         if response.status_code is not 200 :
             print("Not200")
@@ -1801,6 +2074,15 @@ class httpsRequest(QThread):
             if showMessage:
                 message = "アクセスが集中してサーバーが応答していない可能性があります。しばらくしてから実行してください。"
                 ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+        except Exception as e:
+            print(e)
+            global MESSAGE_INTERNET_EXCEPTION_
+            MESSAGE_INTERNET_EXCEPTION_="申し訳ございません。不明なエラーが発生しました。処方箋データを転送するためには、PCまたはアプリの再起動が必要です エラー内容：" + str(e)
+            if showMessage:
+                message = MESSAGE_INTERNET_EXCEPTION_
+                ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+            else:
+                self.finSignal.emit(loopCount, MESSAGE_INTERNET_EXCEPTION)
         return response
 
     def loginRequest(self,user_id,user_pw,android_id):
@@ -1859,7 +2141,16 @@ class httpsRequest(QThread):
 
             httpsRequest.loginSuccessProcess(self, r["token"], r["user_id"], r["user_mail_address"], r["user_name"],
                                                   True)
-        else :
+        elif response.status_code==503:
+            message = "現在、アクセスが集中している可能性があります。しばらくした後実行してください。"
+            ret = QMessageBox.warning(None, "エラー", message, QMessageBox.Yes)
+            self.logoutProcess(False)
+        elif response.status_code==403:
+            message = "ログインに失敗しました\n申し訳ございませんが、Medimonitorは日本国内でのみ利用できます。\n" \
+                      "日本国内でこのエラーが出る場合はお使いのIPアドレスを記載の上、サポートセンターまでご連絡下さい。"
+            ret = QMessageBox.warning(None, "エラー", message, QMessageBox.Yes)
+            self.logoutProcess(False)
+        else:
             message = "サーバーから応答はありましたが、データが受理されませんでした。\nメンテナンス中の可能性があります。しばらくした後実行してください。"
             ret = QMessageBox.warning(None, "エラー", message, QMessageBox.Yes)
             self.logoutProcess(False)
@@ -1905,6 +2196,7 @@ if __name__ == '__main__':
     if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.critical(None, "システムトレイ",
                 "このシステムではシステムトレイを作成することができませんでした")
+        print('Do not create system tray')
         sys.exit(1)
     QApplication.setQuitOnLastWindowClosed(False)
     window = Window()
