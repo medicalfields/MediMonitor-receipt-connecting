@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 LOGIN_SERVER_IP="member.medicalfields.jp"
 VERSION_INFO="1.1"
+CHECK_CSV_START="VER"#VER 
+MAIN_CSV_TYPE="NSIPS" #NSIPS
 import certifi
 from functools import partial
 from PyQt5.QtCore import QLocale, QTranslator, QLibraryInfo
@@ -93,6 +95,11 @@ MESSAGE_INTERNET_EXCEPTION_ = ""
 MESSAGE_PING_CHECK =16
 MESSAGE_PING_CHECK_ = "一定時間経過したため、システムのログイン情報を更新しています・・・"
 MESSAGE_INTERNET_CHECK_ = "現在インターネット未接続のため、再ログイン処理を行っています。インターネットの接続状況を確認してください。\nログインを続行した場合、現在ログインしているＩＤとパスワード情報は失われます。ログインを続行してもよろしいですか？"
+MESSAGE_SERVER_EXCEPTION = 17
+MESSAGE_SERVER_EXCEPTION_ = "サーバーから応答はありますが、正常に処理が完了しませんでした。アクセスが集中している可能性があります。しばらくお待ち下さい。"
+MESSAGE_SERVER_NOT_RESPONSE_EXCEPTION = 18
+MESSAGE_SERVER_NOT_RESPONSE_EXCEPTION_ = "サーバーから応答がありません。アクセスが集中している可能性があります。しばらくお待ち下さい。"
+
 localMessageTextEditFlag=-1
 isExceptionErrorShown=True
 import objgraph
@@ -320,12 +327,13 @@ class Window(QDialog):
 
                             fileTypeError = True
                             someError = True
+                            serverError = False
                             lookup = ('cp932', 'utf_8_sig', 'utf_8')
                             for trying_encoding in lookup:
                                 try:
                                     for line in open(dataFilePath, "r", encoding=trying_encoding):
                                         if fileType == 0:
-                                            if line.startswith("VER"):
+                                            if line.startswith(CHECK_CSV_START):
                                                 fileTypeError = False
                                         print(line)
                                         break
@@ -346,46 +354,58 @@ class Window(QDialog):
                                                     csvBase.encode("shift_jis", errors="ignore"))
 
                                         didLoopCountPing = 0
+
+                                        self.finSignal.emit(loopCount, MESSAGE_SEND_CSV)
                                         self.connectHTTPandSendCSV(csvBase64, basename)
                                         if response is not None:
                                             if response.status_code == 200:
-                                                r = json.loads(response.text)
-                                                if "this" in r:
-                                                    if r["this"] == "ok":
-                                                        someError = False
-                                                        okToDelete = True
-                                                        while okToDelete:
-                                                            try:
-                                                                os.remove(file)
-                                                                okToDelete = False
-                                                            except PermissionError:
-                                                                self.finSignal.emit(loopCount,
-                                                                                    MESSAGE_NO_WRITE_PERMISSION)
-                                                                print('パーミッションエラーです。')
-                                                                time.sleep(0.5)
-                                                            except Exception:
-                                                                print('その他の例外です。')
-                                                                time.sleep(5)
+                                                try:
+                                                    r = json.loads(response.text)
+                                                    if "this" in r:
+                                                        if r["this"] == "ok":
+                                                            someError = False
+                                                            okToDelete = True
+                                                            while okToDelete:
+                                                                try:
+                                                                    os.remove(file)
+                                                                    okToDelete = False
+                                                                except PermissionError:
+                                                                    self.finSignal.emit(loopCount,
+                                                                                        MESSAGE_NO_WRITE_PERMISSION)
+                                                                    print('パーミッションエラーです。')
+                                                                    time.sleep(0.5)
+                                                                except Exception:
+                                                                    print('その他の例外です。')
+                                                                    time.sleep(5)
 
-                                                        okToDelete = True
-                                                        while okToDelete:
-                                                            try:
-                                                                os.remove(dataFilePath)
-                                                                okToDelete = False
-                                                            except PermissionError:
-                                                                self.finSignal.emit(loopCount,
-                                                                                    MESSAGE_NO_WRITE_PERMISSION)
-                                                                print('パーミッションエラーです。')
-                                                                time.sleep(0.5)
-                                                            except Exception:
-                                                                print('その他の例外です。')
-                                                                time.sleep(5)
-                                                    if r["this"] == "needUpdate":
-                                                        updateDetect = True
+                                                            okToDelete = True
+                                                            while okToDelete:
+                                                                try:
+                                                                    os.remove(dataFilePath)
+                                                                    okToDelete = False
+                                                                except PermissionError:
+                                                                    self.finSignal.emit(loopCount,
+                                                                                        MESSAGE_NO_WRITE_PERMISSION)
+                                                                    print('パーミッションエラーです。')
+                                                                    time.sleep(0.5)
+                                                                except Exception:
+                                                                    print('その他の例外です。')
+                                                                    time.sleep(5)
+                                                        if r["this"] == "needUpdate":
+                                                            updateDetect = True
+                                                except Exception:
+                                                    print('JSONエラーです。')
+                                                    serverError = True
 
+
+
+                                            if response.status_code == 503:
+                                                self.finSignal.emit(loopCount, MESSAGE_SERVER_EXCEPTION)
+                                                someError = False
+                                                serverError = True
                                             if response.status_code == 404:
                                                 self.finSignal.emit(loopCount, MESSAGE_404_DETECT)
-                                                time.sleep(300)
+                                                time.sleep(60)
                                             if response.status_code == 400:
                                                 someError = False
                                                 self.finSignal.emit(loopCount, MESSAGE_400_DETECT)
@@ -401,12 +421,17 @@ class Window(QDialog):
                                         self.finSignal.emit(loopCount,
                                                             MESSAGE_UPLOAD_FILE_TYPE_ERROR_DETECT)
                                         time.sleep(5)
+                                    elif serverError:
+                                        print("サーバーにエラーがありました")
+                                        self.finSignal.emit(loopCount,
+                                                            MESSAGE_SERVER_EXCEPTION)
+                                        time.sleep(5)
+
                                     elif someError:
                                         print("ＣＳＶのアップロードにエラーがありました")
                                         self.finSignal.emit(loopCount,
                                                             MESSAGE_UPLOAD_TEXT_ERROR_DETECT)
                                         time.sleep(5)
-
                                     break
                                 except UnicodeDecodeError:
                                     print("UnicodeDecodeError")
@@ -447,18 +472,25 @@ class Window(QDialog):
             updateDetect=False
             if response is not None:
                 if response.status_code == 200:
-                    r = json.loads(response.text)
-                    if "this" in r:
-                        if r["this"] == "kara":
-                            print("ping OK")
-                            #self.finSignal.emit(loopCount, MESSAGE_NO)
+                    try:
+                        r = json.loads(response.text)
+                        if "this" in r:
+                            if r["this"] == "kara":
+                                print("ping OK")
+                                # self.finSignal.emit(loopCount, MESSAGE_NO)
 
-                        if r["this"] == "needUpdate":
-                            updateDetect = True
+                            if r["this"] == "needUpdate":
+                                updateDetect = True
+                    except Exception:
+                        print("JSON Error")
+                        self.finSignal.emit(loopCount, MESSAGE_SERVER_EXCEPTION)
 
+
+                if response.status_code == 503:
+                    self.finSignal.emit(loopCount, MESSAGE_SERVER_EXCEPTION)
                 if response.status_code == 404:
                     self.finSignal.emit(loopCount, MESSAGE_404_DETECT)
-                    time.sleep(300)
+                    time.sleep(60)
                 if response.status_code == 400:
                     someError = False
                     self.finSignal.emit(loopCount, MESSAGE_400_DETECT)
@@ -467,7 +499,7 @@ class Window(QDialog):
                 if updateDetect:
                     print("アップロード中にアップデートが見つかりました")
                     self.finSignal.emit(loopCount, MESSAGE_UPDATE_DETECT)
-                    time.sleep(300)
+                    time.sleep(60)
 
 
 
@@ -484,7 +516,6 @@ class Window(QDialog):
 
                 while (True):
                     print(" response is None while (True)"+str(loopCount))
-                    self.finSignal.emit(loopCount,MESSAGE_INTERNET_ERROR)
                     httpsRequest.asyncTokenRequest(self, proxyDict, MFtoken, userID, sendCsv, sendCsvName,fileType,fileTypeVer,receivedType)
                     time.sleep(5)
                     if response is not None:
@@ -511,7 +542,7 @@ class Window(QDialog):
             sendCsv = ""
             reader = csv.reader(csvfile)
             for row in reader:
-                if row[0].startswith("VER"):# ヘッダ部
+                if row[0].startswith(CHECK_CSV_START):# ヘッダ部
                     if len(row) > 6:
                         row[6] = ""
                     if len(row) > 7:
@@ -810,7 +841,7 @@ class Window(QDialog):
         elif messageDialog==MESSAGE_404_DETECT:
 
             print("MESSAGE_404_DETECT")
-            self.localMessageTextEdit.setText("<b>エラー！</b>\u2029メンテナンス中の可能性があります。しばらくした後再接続します")
+            self.localMessageTextEdit.setText("<b>エラー！</b>\u2029メンテナンス中の可能性があります。しばらくした後、再接続します")
         elif messageDialog == MESSAGE_400_DETECT:
 
             print("MESSAGE_400_DETECT")
@@ -838,6 +869,13 @@ class Window(QDialog):
         elif messageDialog==MESSAGE_INTERNET_ERROR:
             print("MESSAGE_INTERNET_ERROR")
             self.localMessageTextEdit.setText(MESSAGE_INTERNET_ERROR_)
+        elif messageDialog==MESSAGE_SERVER_EXCEPTION:
+            print("MESSAGE_SERVER_EXCEPTION")
+            self.localMessageTextEdit.setText(MESSAGE_SERVER_EXCEPTION_)
+        elif messageDialog==MESSAGE_SERVER_NOT_RESPONSE_EXCEPTION:
+            print("MESSAGE_SERVER_NOT_RESPONSE_EXCEPTION")
+            self.localMessageTextEdit.setText(MESSAGE_SERVER_NOT_RESPONSE_EXCEPTION_)
+
 
         elif messageDialog == MESSAGE_PING_CHECK:
             print("MESSAGE_PING_CHECK")
@@ -970,12 +1008,12 @@ class Window(QDialog):
         self.privacyComboBox = QComboBox()
         self.privacyComboBox.addItem("患者の個人情報を送信する")
         self.privacyComboBox.addItem("患者の個人情報を送信しない")
-        self.receivedLabel = QLabel("NSIPS受信時:")
+        self.receivedLabel = QLabel(MAIN_CSV_TYPE+"受信時:")
         self.receivedComboBox = QComboBox()
         self.receivedComboBox.addItem("すべての処方箋(更新を含む)を待機リストに追加する")
         self.receivedComboBox.addItem("処方情報が重複する場合は、待機リストに追加しない")
         self.iconComboBox = QComboBox()
-        self.iconComboBox.addItem("NSIPS")
+        self.iconComboBox.addItem(MAIN_CSV_TYPE)
         self.verComboBox = QComboBox()
         self.iconComboBox.setCurrentIndex(int(fileType))
         self.setVerComboBox()
@@ -2002,12 +2040,13 @@ class httpsRequest(QThread):
 
         if response is None :
 
-            self.onlineMessageLabel.setText("<b>接続エラー 再試行します</b>")
+            self.localMessageTextEdit.setText("<b>接続エラー 再試行します</b>")
+            self.onlineMessageLabel.setText("<b>再ログイン中・・・</b>")
             self.repaint()
             return
         if response.status_code==404:
             print("token 404")
-            self.onlineMessageLabel.setText("<b>サーバー上にエラー？</b>（メンテナンス中の可能性があります）")
+            self.localMessageTextEdit.setText("<b>サーバー上にエラー？</b>（メンテナンス中の可能性があります）")
 
             self.passwordEdit.setEnabled(False)
             self.passwordEdit.setText("00000000")
@@ -2021,7 +2060,8 @@ class httpsRequest(QThread):
 
         if response.status_code==503:
             print("token 503")
-            self.onlineMessageLabel.setText("<b>接続エラー（アクセスが集中している可能性があります） 再試行します</b>")
+            self.localMessageTextEdit.setText("<b>接続エラー（アクセスが集中している可能性があります） 再試行します。</b>")
+            self.onlineMessageLabel.setText("<b>再ログイン中・・・</b>")
             self.repaint()
             return
 
@@ -2035,45 +2075,62 @@ class httpsRequest(QThread):
         print("Tokenは認証されました")
         print(response.status_code)  # HTTPのステータスコード取得
         print(response.text)  # レスポンスのHTMLを文字列で取得
-        r=json.loads(response.text)
-        if "this" in r :
-            if r["this"] == "kara":
-                print("kara")
-                httpsRequest.loginSuccessProcess(self,MFtoken,userID,userEmail,userName,False)
-            elif r["this"] == "needUpdate":
-                message = "本ソフトウェアを最新版にアップデートする必要があります。公式サイトより最新版をダウンロードし、インストールしてください。"
-                ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
-                import webbrowser
-                webbrowser.open('https://medicalfields.jp/')
-                QApplication.instance().quit()
+        try:
+            r = json.loads(response.text)
+            if "this" in r:
+                if r["this"] == "kara":
+                    print("kara")
+                    httpsRequest.loginSuccessProcess(self, MFtoken, userID, userEmail, userName, False)
+                elif r["this"] == "needUpdate":
+                    message = "本ソフトウェアを最新版にアップデートする必要があります。公式サイトより最新版をダウンロードし、インストールしてください。"
+                    ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+                    import webbrowser
+                    webbrowser.open('https://medicalfields.jp/')
+                    QApplication.instance().quit()
 
 
-            elif r["this"] == "ok":
-                print("kara")
-                self.localMessageTextEdit.setText("レセコンから受信した連動用ファイルをオンラインシステムへ転送しました。")
-                self.repaint()
+                elif r["this"] == "ok":
+                    print("kara")
+                    self.localMessageTextEdit.setText("レセコンから受信した連動用ファイルをオンラインシステムへ転送しました。")
+                    self.onlineMessageLabel.setText("<b>ログイン中</b> ("+userName+"様："+userEmail+")")
+                    self.repaint()
+                    if not isLogined:
+                        httpsRequest.loginSuccessProcess(self, MFtoken, userID, userEmail, userName, False)
+
+        except Exception:
+            print("json error 200")
+            self.localMessageTextEdit.setText("<b>応答エラー（アクセスが集中している可能性があります） 再試行します</b>")
+            self.onlineMessageLabel.setText("<b>再ログイン中・・・</b>")
+            self.repaint()
+            return
+
+
 
     def customHTTPrequest(self,url,data,proxies,showMessage=True):
         response=None
         try:
             response = requests.post(url,
                                      data=data,
-                                     proxies=proxies)
+                                     proxies=proxies, timeout=30)
         except ProxyError:
             print("ProxyError")
             if showMessage:
                 message = "プロキシーが有効になっていますが、サーバーからの応答がありません。プロキシーを無効にするか、インターネットに接続されているかをご確認ください。"
                 ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+        except Timeout:
+            print("Timeout")
+            if showMessage:
+                message = "アクセスが集中してサーバーが応答していない可能性があります。しばらくした後、実行してください。"
+                ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+            else:
+                self.finSignal.emit(loopCount, MESSAGE_SERVER_NOT_RESPONSE_EXCEPTION)
         except requests.exceptions.RequestException as e:
             print(e)
             if showMessage:
                 message = "サーバーからの応答がありません。インターネットに接続されているかをご確認ください。またプロキシーの設定が必要な場合は詳細設定よりプロキシーの設定を行ってください。"
                 ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
-        except Timeout:
-            print("Timeout")
-            if showMessage:
-                message = "アクセスが集中してサーバーが応答していない可能性があります。しばらくしてから実行してください。"
-                ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+            else:
+                self.finSignal.emit(loopCount, MESSAGE_INTERNET_ERROR)
         except Exception as e:
             print(e)
             global MESSAGE_INTERNET_EXCEPTION_
@@ -2105,44 +2162,51 @@ class httpsRequest(QThread):
         print(response.status_code)  # HTTPのステータスコード取得
         print(response.text)  # レスポンスのHTMLを文字列で取得
         if response.status_code==200:
-            r = json.loads(response.text)
-            if "this" in r:
-                if r["this"] == "invalid":
-                    message = "ログインに失敗しました。薬局IDとパスワードが正しいかご確認ください。"
-                    ret = QMessageBox.warning(None, "失敗", message, QMessageBox.Yes)
-                elif r["this"] == "locked":
-                    message = "ログインに失敗しました\nパスワードの上限試行回数に達したか、その他のセキュリティ上の理由でアカウントがロックされました。パスワードを再発行してください。\n" \
-                              "パスワードを再発行した場合、現在ログイン中の端末はすべてログアウトされます。"
-                    ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
-                elif r["this"] == "needUpdate":
-                    message = "本ソフトウェアを最新版にアップデートする必要があります。公式サイトより最新版をダウンロードし、インストールしてください。"
-                    ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
-                elif r["this"] == "regionError":
-                    yourIP=""
-                    if "ip" in r:
-                        yourIP=r["ip"]
-                    message = "ログインに失敗しました\n申し訳ございませんが、お使いの地域ではログインすることができません\n" \
-                              "日本国内でこのエラーが出る場合はこちらのIPアドレス["+yourIP+"]をサポートセンターまでご連絡下さい。"
-                    ret = QMessageBox.information(None, "確認", message, QMessageBox.Yes)
-                elif r["this"] == "no_serial_key":
-                    message = "ログインに失敗しました\nシリアルキーが登録されていません。アプリより有効なシリアルキーの登録か、サブスクリプションを登録した後、実行してください"
-                    ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
-                elif r["this"] == "no_valid_key_left":
-                    message = "ログインに失敗しました\nこのアカウントで認証可能なライセンス数の上限に達しています。他の端末を解除してから再ログインしてください。\n" \
-                              "またログインできる端末がわからない場合はパスワードを再発行してください。パスワードを再発行した場合、現在ログイン中の端末はすべてログアウトされます。"
-                    ret = QMessageBox.information(None, "確認", message, QMessageBox.Yes)
-                elif r["this"] == "no_client_left":
-                    message = "ログインに失敗しました\nこのアカウントで許可されている端末の上限に達しています。他の端末からログアウトするか、端末の上限を拡大してから再ログインしてください。\n" \
-                              "またログインできる端末がわからない場合はパスワードを再発行してください。パスワードを再発行した場合、現在ログイン中の端末はすべてログアウトされます。"
-                    ret = QMessageBox.information(None, "確認", message, QMessageBox.Yes)
+            try:
+                r = json.loads(response.text)
+                if "this" in r:
+                    if r["this"] == "invalid":
+                        message = "ログインに失敗しました。薬局IDとパスワードが正しいかご確認ください。"
+                        ret = QMessageBox.warning(None, "失敗", message, QMessageBox.Yes)
+                    elif r["this"] == "locked":
+                        message = "ログインに失敗しました\nパスワードの上限試行回数に達したか、その他のセキュリティ上の理由でアカウントがロックされました。パスワードを再発行してください。\n" \
+                                  "パスワードを再発行した場合、現在ログイン中の端末はすべてログアウトされます。"
+                        ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+                    elif r["this"] == "needUpdate":
+                        message = "本ソフトウェアを最新版にアップデートする必要があります。公式サイトより最新版をダウンロードし、インストールしてください。"
+                        ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+                    elif r["this"] == "regionError":
+                        yourIP = ""
+                        if "ip" in r:
+                            yourIP = r["ip"]
+                        message = "ログインに失敗しました\n申し訳ございませんが、お使いの地域ではログインすることができません\n" \
+                                  "日本国内でこのエラーが出る場合はこちらのIPアドレス[" + yourIP + "]をサポートセンターまでご連絡下さい。"
+                        ret = QMessageBox.information(None, "確認", message, QMessageBox.Yes)
+                    elif r["this"] == "no_serial_key":
+                        message = "ログインに失敗しました\nシリアルキーが登録されていません。アプリより有効なシリアルキーの登録か、サブスクリプションを登録した後、実行してください"
+                        ret = QMessageBox.warning(None, "確認", message, QMessageBox.Yes)
+                    elif r["this"] == "no_valid_key_left":
+                        message = "ログインに失敗しました\nこのアカウントで認証可能なライセンス数の上限に達しています。他の端末を解除してから再ログインしてください。\n" \
+                                  "またログインできる端末がわからない場合はパスワードを再発行してください。パスワードを再発行した場合、現在ログイン中の端末はすべてログアウトされます。"
+                        ret = QMessageBox.information(None, "確認", message, QMessageBox.Yes)
+                    elif r["this"] == "no_client_left":
+                        message = "ログインに失敗しました\nこのアカウントで許可されている端末の上限に達しています。他の端末からログアウトするか、端末の上限を拡大してから再ログインしてください。\n" \
+                                  "またログインできる端末がわからない場合はパスワードを再発行してください。パスワードを再発行した場合、現在ログイン中の端末はすべてログアウトされます。"
+                        ret = QMessageBox.information(None, "確認", message, QMessageBox.Yes)
+                    self.logoutProcess(False)
+
+                    return
+
+                httpsRequest.loginSuccessProcess(self, r["token"], r["user_id"], r["user_mail_address"], r["user_name"],
+                                                 True)
+            except Exception:
+                message = "サーバーから応答はありますが、正常に処理が完了しませんでした。アクセスが集中している可能性があります。しばらくした後、実行してください。"
+                ret = QMessageBox.warning(None, "エラー", message, QMessageBox.Yes)
                 self.logoutProcess(False)
 
-                return
 
-            httpsRequest.loginSuccessProcess(self, r["token"], r["user_id"], r["user_mail_address"], r["user_name"],
-                                                  True)
         elif response.status_code==503:
-            message = "現在、アクセスが集中している可能性があります。しばらくした後実行してください。"
+            message = "現在、アクセスが集中している可能性があります。しばらくした後、実行してください。"
             ret = QMessageBox.warning(None, "エラー", message, QMessageBox.Yes)
             self.logoutProcess(False)
         elif response.status_code==403:
@@ -2151,7 +2215,7 @@ class httpsRequest(QThread):
             ret = QMessageBox.warning(None, "エラー", message, QMessageBox.Yes)
             self.logoutProcess(False)
         else:
-            message = "サーバーから応答はありましたが、データが受理されませんでした。\nメンテナンス中の可能性があります。しばらくした後実行してください。"
+            message = "サーバーから応答はありましたが、データが受理されませんでした。\nメンテナンス中の可能性があります。しばらくした後、実行してください。"
             ret = QMessageBox.warning(None, "エラー", message, QMessageBox.Yes)
             self.logoutProcess(False)
 
